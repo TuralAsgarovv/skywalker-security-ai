@@ -2,7 +2,7 @@
 
 An AI-powered cybersecurity assistant built for **learning and defensive security work**. It brings several security-analysis modules into a single, clean interface — from HTTP security-header audits and OWASP Top 10 guidance to CVE intelligence, vulnerability explanations and an AI chat advisor — on top of a small serverless AI backend.
 
-> **Educational use only.** Please read the [Disclaimer](#-disclaimer) before using this project.
+> **Educational use only.** Please read the [Disclaimer](#-disclaimer) before using this project.(For testing tool https://skywalker-security-ai.vercel.app/)
 
 ---
 
