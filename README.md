@@ -32,7 +32,7 @@ With this tool you can:
 | **Exploit Architect** | A learning sandbox for reasoning about payload structure and mitigation in authorized, lab-only contexts. |
 | **Cyber Arsenal** | Concept-level explanations of security tooling for study purposes. |
 | **AI Chat** | Free-form security Q&A with the Skywalker AI assistant. |
-| **Settings** | Choose the AI provider (Gemini or DeepSeek) and see whether a key is configured. |
+| **Settings** | Choose the AI provider (Gemini or DeepSeek), paste your own API key and see whether a key is configured. |
 
 The interface supports **English and Azerbaijani**.
 
@@ -84,7 +84,7 @@ The production AI backend lives in `api/ai/` as Vercel Serverless Functions, so 
 2. *(Optional, recommended)* Add **Environment Variables** to the Vercel project: `DEEPSEEK_API_KEY` and/or `GEMINI_API_KEY` (optionally `DEEPSEEK_MODEL`, `AI_REQUEST_TIMEOUT_MS`).
 3. Deploy — or redeploy after changing environment variables.
 
-> **No environment variables? It still works.** Open **Settings** in the deployed app, paste your DeepSeek (or Gemini) key and press **Save key**. The key is stored only in that browser's `localStorage` and is attached to every `/api/ai/generate` request; a key entered there takes precedence over the deployment variables. Clearing site data / using another device means pasting it again. This is also how visitors of a public deployment can use their own key.
+> **No environment variables? It still works.** On the first visit the app automatically opens a small **AI key** dialog (the same dialog is behind the key icon in the header and inside **Settings**). Paste a DeepSeek (or Gemini) key, press **Save and test key** — it is validated immediately with a tiny request, so you know right away whether it works. The key is stored only in that browser's `localStorage` and is attached to every `/api/ai/generate` request; a key entered there takes precedence over the deployment variables. Clearing site data / using another device means pasting it again. This is also how visitors of a public deployment can use their own key.
 > Vercel's Hobby plan caps function execution at 60s (the DeepSeek request timeout defaults to 58s).
 
 ## Project structure

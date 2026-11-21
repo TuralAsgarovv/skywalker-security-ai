@@ -20,7 +20,8 @@ import {
   Info,
   Sword,
   SearchCode,
-  Crosshair
+  Crosshair,
+  KeyRound
 } from 'lucide-react';
 import { View } from './types';
 import {
@@ -28,6 +29,8 @@ import {
   getSavedAIProvider,
   saveAIProviderKey,
   clearAIProviderKey,
+  isAnyProviderConfigured,
+  AI_KEY_REQUIRED_EVENT,
   type AIProvider,
   type AIProviderStatus
 } from './services/gemini';
@@ -43,6 +46,7 @@ import ExploitArchitect from './components/ExploitArchitect';
 import CyberArsenal from './components/CyberArsenal';
 import IntelExplorer from './components/IntelExplorer';
 import BountyHunter from './components/BountyHunter';
+import ApiKeyModal from './components/ApiKeyModal';
 
 interface Notification {
   id: string;
@@ -61,6 +65,7 @@ const App: React.FC = () => {
   const [architectPrefill, setArchitectPrefill] = useState<{vulnClass: string, techStack: string, context: string} | null>(null);
   const [aiProvider, setAIProvider] = useState<AIProvider>(() => getSavedAIProvider());
   const [providerStatus, setProviderStatus] = useState<AIProviderStatus>({ gemini: false, deepseek: false });
+  const [isKeyModalOpen, setIsKeyModalOpen] = useState(false);
   const notificationRef = useRef<HTMLDivElement>(null);
 
   const [notifications, setNotifications] = useState<Notification[]>([
@@ -106,6 +111,13 @@ const App: React.FC = () => {
         if (resolvedProvider !== stored) {
           localStorage.setItem('skywalker_ai_provider', resolvedProvider);
         }
+
+        // First visit without any key: offer the key dialog immediately so the AI
+        // modules are usable without hunting through Settings.
+        const dismissed = sessionStorage.getItem('skywalker_key_prompt_dismissed') === 'true';
+        if (!status.gemini && !status.deepseek && !dismissed) {
+          setIsKeyModalOpen(true);
+        }
       })
       .catch(error => console.error('Could not load AI provider status:', error));
     return () => {
@@ -122,6 +134,20 @@ const App: React.FC = () => {
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  // Any feature that hits a missing/invalid key asks for the dialog instead of
+  // leaving the visitor with an error they cannot resolve.
+  useEffect(() => {
+    const handleKeyRequired = () => setIsKeyModalOpen(true);
+    window.addEventListener(AI_KEY_REQUIRED_EVENT, handleKeyRequired);
+    return () => window.removeEventListener(AI_KEY_REQUIRED_EVENT, handleKeyRequired);
+  }, []);
+
+  const handleCloseKeyModal = () => {
+    setIsKeyModalOpen(false);
+    // Do not nag during this tab session, but ask again on the next visit.
+    sessionStorage.setItem('skywalker_key_prompt_dismissed', 'true');
+  };
 
   const handleSetLanguage = (lang: 'en' | 'az') => {
     setLanguage(lang);
@@ -183,7 +209,10 @@ const App: React.FC = () => {
       systemStatus: 'System:',
       operational: 'Online',
       setupRequired: 'Setup Required',
-      apiKeyNotice: 'The selected provider has no API key configured. Add it in Settings or configure it in .env.local.',
+      apiKeyNotice: 'AI features are locked until a key is added. Paste your own key — it stays in this browser and is sent only with your AI requests.',
+      addKey: 'Add AI key',
+      aiKeyButton: 'AI key',
+      keyReady: 'AI key ready',
       cpu: 'Core Load',
       notifications: 'Notifications',
       markRead: 'Mark all read',
@@ -204,7 +233,10 @@ const App: React.FC = () => {
       systemStatus: 'Sistem:',
       operational: 'Aktiv',
       setupRequired: 'Quraşdırma tələb olunur',
-      apiKeyNotice: 'Seçilmiş provayder üçün API açarı qurulmayıb. Açarı Parametrlərdə daxil edin və ya .env.local faylında konfiqurasiya edin.',
+      apiKeyNotice: 'Sİ funksiyaları açar əlavə olunana qədər kilidlidir. Öz açarınızı yapışdırın — yalnız bu brauzerdə saxlanılır və Sİ sorğularınızla göndərilir.',
+      addKey: 'Sİ açarı əlavə et',
+      aiKeyButton: 'Sİ açarı',
+      keyReady: 'Sİ açarı hazırdır',
       cpu: 'Nüvə Yükü',
       notifications: 'Bildirişlər',
       markRead: 'Hamısını oxunmuş kimi qeyd et',
@@ -227,6 +259,7 @@ const App: React.FC = () => {
 
   const unreadCount = notifications.filter(n => n.unread).length;
   const aiProviderConfigured = providerStatus[aiProvider];
+  const anyKeyConfigured = isAnyProviderConfigured(providerStatus);
 
   if (!isAccepted) {
     return <Disclaimer language={language} setLanguage={handleSetLanguage} onAccept={handleAcceptTerms} />;
@@ -351,6 +384,18 @@ const App: React.FC = () => {
               )}
             </div>
 
+            <button
+              onClick={() => setIsKeyModalOpen(true)}
+              title={anyKeyConfigured ? translations.keyReady : translations.aiKeyButton}
+              aria-label={translations.aiKeyButton}
+              className={`relative p-2.5 rounded-xl transition-all ${
+                anyKeyConfigured ? 'text-slate-500 hover:text-white hover:bg-slate-900' : 'text-amber-400 hover:text-amber-300 hover:bg-slate-900'
+              }`}
+            >
+              <KeyRound size={20} />
+              <span className={`absolute top-2 right-2 w-1.5 h-1.5 rounded-full ${anyKeyConfigured ? 'bg-green-500' : 'bg-amber-500 animate-pulse'}`} />
+            </button>
+
             <button 
               onClick={() => setActiveView(activeView === View.SETTINGS ? View.DASHBOARD : View.SETTINGS)}
               className={`p-2.5 rounded-xl transition-all ${
@@ -364,8 +409,15 @@ const App: React.FC = () => {
 
         <div className="flex-1 overflow-y-auto p-8 lg:p-12 scroll-smooth bg-slate-950">
           {!aiProviderConfigured && (
-            <div role="alert" className="max-w-6xl mx-auto mb-6 rounded-xl border border-amber-700/50 bg-amber-950/30 px-5 py-4 text-sm text-amber-200">
-              {translations.apiKeyNotice}
+            <div role="alert" className="max-w-6xl mx-auto mb-6 rounded-xl border border-amber-700/50 bg-amber-950/30 px-5 py-4 text-sm text-amber-200 flex flex-col sm:flex-row sm:items-center gap-3 sm:justify-between">
+              <span>{translations.apiKeyNotice}</span>
+              <button
+                onClick={() => setIsKeyModalOpen(true)}
+                className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 text-[11px] font-bold uppercase tracking-widest transition-colors shrink-0"
+              >
+                <KeyRound size={14} />
+                {translations.addKey}
+              </button>
             </div>
           )}
           <div className="max-w-6xl mx-auto pb-12 relative min-h-full">
@@ -414,6 +466,15 @@ const App: React.FC = () => {
           </div>
         </div>
       </main>
+
+      <ApiKeyModal
+        open={isKeyModalOpen}
+        language={language}
+        providerStatus={providerStatus}
+        initialProvider={aiProvider}
+        onClose={handleCloseKeyModal}
+        onUpdateKey={handleUpdateProviderKey}
+      />
     </div>
   );
 };

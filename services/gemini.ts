@@ -167,6 +167,71 @@ export const saveAIProviderKey = (provider: AIProvider, key: string) =>
 export const clearAIProviderKey = (provider: AIProvider) =>
   updateAIProviderKey(provider, 'DELETE');
 
+export const isAnyProviderConfigured = (status: AIProviderStatus) =>
+  Boolean(status.gemini || status.deepseek);
+
+// Fired whenever an AI request fails because no (or an invalid) key is available,
+// so the app can open the key dialog from anywhere instead of showing a dead end.
+export const AI_KEY_REQUIRED_EVENT = 'skywalker:ai-key-required';
+
+const notifyKeyRequired = (message: string, provider: AIProvider) => {
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(new CustomEvent(AI_KEY_REQUIRED_EVENT, { detail: { message, provider } }));
+};
+
+export interface AIKeyTestResult {
+  ok: boolean;
+  message: string;
+  latencyMs?: number;
+}
+
+// Sends one tiny request with the pasted key so the visitor learns immediately
+// whether it works (no more "saved but every feature still fails").
+export const testAIProviderKey = async (provider: AIProvider, key: string): Promise<AIKeyTestResult> => {
+  const trimmedKey = key.trim();
+  if (!trimmedKey) {
+    return { ok: false, message: 'Paste an API key first.' };
+  }
+
+  const startedAt = Date.now();
+  try {
+    const response = await fetch('/api/ai/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        provider,
+        apiKey: trimmedKey,
+        ...(provider === 'gemini' ? { model: 'gemini-3.6-flash' } : {}),
+        contents: 'Reply with the single word OK and nothing else.'
+      })
+    });
+
+    const result = await response.json().catch(() => ({} as { text?: string; error?: string }));
+    if (!response.ok) {
+      return {
+        ok: false,
+        message: result.error || `The provider rejected the key (${response.status}).`
+      };
+    }
+
+    const text = typeof result.text === 'string' ? result.text.trim() : '';
+    if (!text) {
+      return { ok: false, message: 'The provider answered with an empty message. Try again or check the key permissions.' };
+    }
+
+    return {
+      ok: true,
+      message: `Key works — the model replied: "${text.slice(0, 40)}"`,
+      latencyMs: Date.now() - startedAt
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      message: error instanceof Error ? error.message : 'Could not reach the AI proxy. Check your connection and try again.'
+    };
+  }
+};
+
 const ai = {
   models: {
     async generateContent(params: GenerateContentParameters): Promise<GenerateContentResponse> {
@@ -180,7 +245,15 @@ const ai = {
 
       const result = await response.json() as GenerateContentResponse & { error?: string };
       if (!response.ok) {
-        throw new Error(result.error || `AI request failed (${response.status}).`);
+        const message = result.error || `AI request failed (${response.status}).`;
+        const keyProblem = response.status === 401
+          || response.status === 403
+          || response.status === 503
+          || /api\s?key|açar|unauthori[sz]ed/i.test(message);
+        if (keyProblem) {
+          notifyKeyRequired(message, provider);
+        }
+        throw new Error(message);
       }
       return result;
     }
