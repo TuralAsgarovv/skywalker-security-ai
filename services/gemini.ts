@@ -36,12 +36,61 @@ export interface AIProviderStatus {
 export const getSavedAIProvider = (): AIProvider =>
   localStorage.getItem('skywalker_ai_provider') === 'deepseek' ? 'deepseek' : 'gemini';
 
-export const getAIProviderStatus = async (): Promise<AIProviderStatus> => {
-  const response = await fetch('/api/ai/status');
-  if (!response.ok) {
-    throw new Error(`Could not read AI provider status (${response.status}).`);
+// API keys can come from two places:
+//   1. The deployment owner configured DEEPSEEK_API_KEY / GEMINI_API_KEY as
+//      project environment variables (reported by /api/ai/status).
+//   2. The visitor pasted a key in Settings — it is kept in this browser only
+//      (localStorage) and sent with every AI request to the serverless proxy.
+const providerKeyStorageKey = (provider: AIProvider) => `skywalker_ai_key_${provider}`;
+
+const readStoredProviderKey = (provider: AIProvider): string | undefined => {
+  try {
+    const value = localStorage.getItem(providerKeyStorageKey(provider));
+    const trimmed = value?.trim();
+    return trimmed ? trimmed : undefined;
+  } catch {
+    return undefined;
   }
-  return response.json() as Promise<AIProviderStatus>;
+};
+
+const readStoredProviderKeys = (): AIProviderStatus => ({
+  gemini: Boolean(readStoredProviderKey('gemini')),
+  deepseek: Boolean(readStoredProviderKey('deepseek'))
+});
+
+const writeStoredProviderKey = (provider: AIProvider, key?: string) => {
+  try {
+    if (key) {
+      localStorage.setItem(providerKeyStorageKey(provider), key);
+    } else {
+      localStorage.removeItem(providerKeyStorageKey(provider));
+    }
+  } catch {
+    throw new Error(
+      'This browser blocked local storage, so the API key could not be saved. Allow site data for this page and try again.'
+    );
+  }
+};
+
+export const getAIProviderStatus = async (): Promise<AIProviderStatus> => {
+  const stored = readStoredProviderKeys();
+  try {
+    const response = await fetch('/api/ai/status');
+    if (!response.ok) {
+      throw new Error(`Could not read AI provider status (${response.status}).`);
+    }
+    const server = await response.json() as AIProviderStatus;
+    // A key saved in this browser works even when the deployment has no
+    // environment variables, so both sources are merged here.
+    return {
+      gemini: Boolean(server.gemini) || stored.gemini,
+      deepseek: Boolean(server.deepseek) || stored.deepseek
+    };
+  } catch (error) {
+    // Offline / endpoint unavailable: the browser copy is still usable.
+    console.warn('Could not reach /api/ai/status, using browser-stored keys only.', error);
+    return stored;
+  }
 };
 
 const getAIProviderForRequest = async (): Promise<AIProvider> => {
@@ -83,16 +132,33 @@ const updateAIProviderKey = async (
   method: 'PUT' | 'DELETE',
   key?: string
 ): Promise<AIProviderStatus> => {
-  const response = await fetch('/api/ai/keys', {
-    method,
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ provider, ...(key ? { key } : {}) })
-  });
-  const result = await response.json() as AIProviderStatus & { error?: string };
-  if (!response.ok) {
-    throw new Error(result.error || `Could not update provider key (${response.status}).`);
+  const trimmedKey = key?.trim();
+  if (method === 'PUT' && !trimmedKey) {
+    throw new Error('Enter a valid API key.');
   }
-  return { gemini: result.gemini, deepseek: result.deepseek };
+  if (trimmedKey && trimmedKey.length > 8192) {
+    throw new Error('That API key is too long. Paste only the key value.');
+  }
+
+  // The browser copy is the source of truth: a serverless deployment (Vercel)
+  // cannot persist keys between requests, so the key must live on the client
+  // and travel with each AI request.
+  writeStoredProviderKey(provider, method === 'PUT' ? trimmedKey : undefined);
+
+  // Best-effort notification: the local Vite dev server keeps keys in memory and
+  // answers 200. On Vercel this endpoint only reports environment variables, so
+  // an error there must never block the key that is already stored locally.
+  try {
+    await fetch('/api/ai/keys', {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ provider, ...(trimmedKey ? { key: trimmedKey } : {}) })
+    });
+  } catch {
+    // Ignored on purpose — the key is saved in this browser.
+  }
+
+  return getAIProviderStatus();
 };
 
 export const saveAIProviderKey = (provider: AIProvider, key: string) =>
@@ -104,10 +170,12 @@ export const clearAIProviderKey = (provider: AIProvider) =>
 const ai = {
   models: {
     async generateContent(params: GenerateContentParameters): Promise<GenerateContentResponse> {
+      const provider = await getAIProviderForRequest();
+      const apiKey = readStoredProviderKey(provider);
       const response = await fetch('/api/ai/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...params, provider: await getAIProviderForRequest() })
+        body: JSON.stringify({ ...params, provider, ...(apiKey ? { apiKey } : {}) })
       });
 
       const result = await response.json() as GenerateContentResponse & { error?: string };

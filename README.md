@@ -41,7 +41,7 @@ The interface supports **English and Azerbaijani**.
 - **React 19 + TypeScript** (Vite)
 - **Tailwind CSS** (loaded via CDN in `index.html`)
 - **Recharts** for dashboard charts
-- **Vercel Serverless Functions** (`/api/ai/*`) as the AI backend — provider API keys stay on the server and are never shipped to the browser
+- **Vercel Serverless Functions** (`/api/ai/*`) as the AI backend — provider keys come from the deployment environment variables **or** from the visitor's browser (Settings). No key is ever committed to the repository.
 - AI providers: **Google Gemini** and **DeepSeek** (at least one is required)
 
 ## Run locally
@@ -81,10 +81,10 @@ During local development the Vite server handles `/api/ai/*` itself (see `vite.c
 The production AI backend lives in `api/ai/` as Vercel Serverless Functions, so the deployed site works without any extra server.
 
 1. Import this repository into Vercel (the framework auto-detects **Vite**; `vercel.json` sets the build command and output directory).
-2. Add **Environment Variables** to the Vercel project: `DEEPSEEK_API_KEY` and/or `GEMINI_API_KEY` (optionally `DEEPSEEK_MODEL`, `AI_REQUEST_TIMEOUT_MS`).
+2. *(Optional, recommended)* Add **Environment Variables** to the Vercel project: `DEEPSEEK_API_KEY` and/or `GEMINI_API_KEY` (optionally `DEEPSEEK_MODEL`, `AI_REQUEST_TIMEOUT_MS`).
 3. Deploy — or redeploy after changing environment variables.
 
-> On Vercel, keys are **environment variables only** and cannot be saved from the Settings page; the Settings page just reports whether a key is configured.
+> **No environment variables? It still works.** Open **Settings** in the deployed app, paste your DeepSeek (or Gemini) key and press **Save key**. The key is stored only in that browser's `localStorage` and is attached to every `/api/ai/generate` request; a key entered there takes precedence over the deployment variables. Clearing site data / using another device means pasting it again. This is also how visitors of a public deployment can use their own key.
 > Vercel's Hobby plan caps function execution at 60s (the DeepSeek request timeout defaults to 58s).
 
 ## Project structure

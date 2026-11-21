@@ -13,13 +13,15 @@ export default function handler(req, res) {
     return;
   }
 
-  // Serverless functions do not keep in-memory state between requests, so API
-  // keys must be configured once as Vercel environment variables. Report the
-  // current status honestly instead of pretending a browser-submitted key was
-  // persisted.
-  sendJson(res, 400, {
-    error: 'On this Vercel deployment, API keys are configured as project environment variables (DEEPSEEK_API_KEY / GEMINI_API_KEY) and cannot be changed from the browser.',
+  // Serverless functions do not keep in-memory state between requests, so a key
+  // sent from the browser cannot be persisted on the server. The browser stores
+  // it (localStorage) and includes it with every /api/ai/generate request, so
+  // this endpoint simply confirms how server-side keys are provided.
+  sendJson(res, 200, {
     gemini: Boolean(getGeminiKey()),
-    deepseek: Boolean(getDeepseekKey())
+    deepseek: Boolean(getDeepseekKey()),
+    persisted: false,
+    storage: 'browser',
+    message: 'API keys are stored in this browser and sent with each AI request. To use a server-side key instead, set DEEPSEEK_API_KEY / GEMINI_API_KEY as Vercel environment variables and redeploy.'
   });
 }

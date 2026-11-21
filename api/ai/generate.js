@@ -85,6 +85,20 @@ const getEnvKeys = () => ({
   deepseekModel: process.env.DEEPSEEK_MODEL?.trim() || 'deepseek-v4-pro'
 });
 
+// A serverless function cannot persist a key submitted from the browser, so the
+// client keeps it in localStorage and sends it with each request. That key takes
+// precedence over the deployment environment variables.
+const getClientKey = (rawBody) => {
+  const candidate = typeof rawBody.apiKey === 'string'
+    ? rawBody.apiKey.trim()
+    : typeof rawBody.key === 'string'
+      ? rawBody.key.trim()
+      : '';
+  if (!candidate) return '';
+  if (candidate.length > 8192) throw new ProxyError('The API key in the request is too long.', 400);
+  return candidate;
+};
+
 let geminiClient;
 let geminiClientKey;
 
@@ -116,11 +130,18 @@ export default async function handler(req, res) {
       ...(isRecord(rawBody.config) ? { config: rawBody.config } : {})
     };
 
-    const { gemini, deepseek, deepseekModel } = getEnvKeys();
+    const clientKey = getClientKey(rawBody);
+    const envKeys = getEnvKeys();
+    const gemini = clientKey || envKeys.gemini;
+    const deepseek = clientKey || envKeys.deepseek;
+    const deepseekModel = envKeys.deepseekModel;
 
     if (provider === 'gemini') {
       if (!gemini) {
-        throw new ProxyError('Add a Google AI Studio key in Vercel environment variables (GEMINI_API_KEY).', 503);
+        throw new ProxyError(
+          'Add a Google AI Studio key in Settings (it is stored in your browser) or set GEMINI_API_KEY in the deployment environment.',
+          503
+        );
       }
       if (!geminiClient || geminiClientKey !== gemini) {
         geminiClient = new GoogleGenAI({ apiKey: gemini });
@@ -132,7 +153,10 @@ export default async function handler(req, res) {
     }
 
     if (!deepseek) {
-      throw new ProxyError('Add a DeepSeek key in Vercel environment variables (DEEPSEEK_API_KEY).', 503);
+      throw new ProxyError(
+        'Add a DeepSeek key in Settings (it is stored in your browser) or set DEEPSEEK_API_KEY in the deployment environment.',
+        503
+      );
     }
 
     const config = isRecord(params.config) ? params.config : {};
@@ -207,7 +231,7 @@ export default async function handler(req, res) {
       : 'high';
     const wantsJson = config.responseMimeType === 'application/json' || Boolean(responseSchema);
 
-    const requestDeepseek = (withJsonMode) =>
+    const requestDeepseek = (withJsonMode, modelName = deepseekModel) =>
       fetch('https://api.deepseek.com/chat/completions', {
         method: 'POST',
         headers: {
@@ -215,7 +239,7 @@ export default async function handler(req, res) {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          model: deepseekModel,
+          model: modelName,
           messages,
           thinking: { type: 'enabled' },
           reasoning_effort: reasoningEffort,
@@ -238,9 +262,25 @@ export default async function handler(req, res) {
       }
     }
 
+    // A renamed/retired model id (e.g. a stale DEEPSEEK_MODEL value) must not look
+    // like an invalid API key. Fall back once to DeepSeek's stable chat model.
+    const modelErrorMessage = String(result?.error?.message || '').toLowerCase();
+    const isModelError = !deepseekResponse.ok
+      && (deepseekResponse.status === 400 || deepseekResponse.status === 404)
+      && ['model not exist', 'model does not exist', 'model not found', 'invalid model', 'unknown model', 'unsupported model']
+        .some(phrase => modelErrorMessage.includes(phrase));
+    if (isModelError && deepseekModel !== 'deepseek-chat') {
+      deepseekResponse = await requestDeepseek(wantsJson, 'deepseek-chat');
+      result = await deepseekResponse.json();
+    }
+
     if (!deepseekResponse.ok) {
+      const keyErrorMessage = String(result?.error?.message || '');
+      const isAuthError = deepseekResponse.status === 401 || deepseekResponse.status === 403;
       throw new ProxyError(
-        result.error?.message || `DeepSeek request failed (${deepseekResponse.status}).`,
+        isAuthError
+          ? `DeepSeek rejected the API key. Open Settings and paste a valid DeepSeek key (${keyErrorMessage || 'unauthorized'}).`
+          : keyErrorMessage || `DeepSeek request failed (${deepseekResponse.status}).`,
         502
       );
     }

@@ -108,6 +108,7 @@ const localAIProxy = (
   deepseekModel: string
 ) => {
   let geminiClient: GoogleGenAI | undefined;
+  let geminiClientKey: string | undefined;
   let activeGeminiKey = geminiKey;
   let activeDeepseekKey = deepseekKey;
 
@@ -211,6 +212,15 @@ const localAIProxy = (
             throw new ProxyError('Request contents are required.', 400);
           }
 
+          // A key pasted in the browser (Settings) is sent with the request and
+          // takes precedence over one kept in dev-server memory.
+          const clientKey = typeof rawBody.apiKey === 'string' ? rawBody.apiKey.trim() : '';
+          if (clientKey.length > 8192) {
+            throw new ProxyError('The API key in the request is too long.', 400);
+          }
+          const geminiKey = clientKey || activeGeminiKey;
+          const deepseekKey = clientKey || activeDeepseekKey;
+
           const params = {
             model: typeof model === 'string' ? model : '',
             contents: rawBody.contents as GenerateContentParameters['contents'],
@@ -220,11 +230,14 @@ const localAIProxy = (
           } satisfies GenerateContentParameters;
 
           if (provider === 'gemini') {
-            if (!activeGeminiKey) {
+            if (!geminiKey) {
               throw new ProxyError('Add a Google AI Studio key in Settings.', 503);
             }
 
-            geminiClient ??= new GoogleGenAI({ apiKey: activeGeminiKey });
+            if (!geminiClient || geminiClientKey !== geminiKey) {
+              geminiClient = new GoogleGenAI({ apiKey: geminiKey });
+              geminiClientKey = geminiKey;
+            }
             const result = await geminiClient.models.generateContent(params);
             sendJson(response, 200, {
               text: result.text || '',
@@ -233,7 +246,7 @@ const localAIProxy = (
             return;
           }
 
-          if (!activeDeepseekKey) {
+          if (!deepseekKey) {
             throw new ProxyError('Add a DeepSeek key in Settings.', 503);
           }
 
@@ -327,7 +340,7 @@ const localAIProxy = (
             fetch('https://api.deepseek.com/chat/completions', {
               method: 'POST',
               headers: {
-                Authorization: `Bearer ${activeDeepseekKey}`,
+                Authorization: `Bearer ${deepseekKey}`,
                 'Content-Type': 'application/json'
               },
               body: JSON.stringify({
