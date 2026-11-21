@@ -231,7 +231,7 @@ const localAIProxy = (
 
           if (provider === 'gemini') {
             if (!geminiKey) {
-              throw new ProxyError('Add a Google AI Studio key in Settings.', 503);
+              throw new ProxyError('Add a Google AI Studio key — click the key icon in the header or open Settings.', 503);
             }
 
             if (!geminiClient || geminiClientKey !== geminiKey) {
@@ -247,7 +247,7 @@ const localAIProxy = (
           }
 
           if (!deepseekKey) {
-            throw new ProxyError('Add a DeepSeek key in Settings.', 503);
+            throw new ProxyError('Add a DeepSeek key — click the key icon in the header or open Settings.', 503);
           }
 
           const config = isRecord(params.config) ? params.config : {};

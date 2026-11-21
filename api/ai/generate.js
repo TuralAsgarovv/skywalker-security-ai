@@ -139,7 +139,7 @@ export default async function handler(req, res) {
     if (provider === 'gemini') {
       if (!gemini) {
         throw new ProxyError(
-          'Add a Google AI Studio key in Settings (it is stored in your browser) or set GEMINI_API_KEY in the deployment environment.',
+          'Add a Google AI Studio key — click the key icon in the header (or open Settings) to paste it, or set GEMINI_API_KEY in the deployment environment.',
           503
         );
       }
@@ -154,7 +154,7 @@ export default async function handler(req, res) {
 
     if (!deepseek) {
       throw new ProxyError(
-        'Add a DeepSeek key in Settings (it is stored in your browser) or set DEEPSEEK_API_KEY in the deployment environment.',
+        'Add a DeepSeek key — click the key icon in the header (or open Settings) to paste it, or set DEEPSEEK_API_KEY in the deployment environment.',
         503
       );
     }
@@ -279,7 +279,7 @@ export default async function handler(req, res) {
       const isAuthError = deepseekResponse.status === 401 || deepseekResponse.status === 403;
       throw new ProxyError(
         isAuthError
-          ? `DeepSeek rejected the API key. Open Settings and paste a valid DeepSeek key (${keyErrorMessage || 'unauthorized'}).`
+          ? `DeepSeek rejected the API key. Click the key icon in the header (or open Settings) and paste a valid DeepSeek key (${keyErrorMessage || 'unauthorized'}).`
           : keyErrorMessage || `DeepSeek request failed (${deepseekResponse.status}).`,
         502
       );
