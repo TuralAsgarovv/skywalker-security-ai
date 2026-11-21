@@ -114,7 +114,12 @@ const App: React.FC = () => {
 
         // First visit without any key: offer the key dialog immediately so the AI
         // modules are usable without hunting through Settings.
-        const dismissed = sessionStorage.getItem('skywalker_key_prompt_dismissed') === 'true';
+        let dismissed = false;
+        try {
+          dismissed = sessionStorage.getItem('skywalker_key_prompt_dismissed') === 'true';
+        } catch {
+          // Private mode can block sessionStorage; then simply ask every visit.
+        }
         if (!status.gemini && !status.deepseek && !dismissed) {
           setIsKeyModalOpen(true);
         }
@@ -146,7 +151,11 @@ const App: React.FC = () => {
   const handleCloseKeyModal = () => {
     setIsKeyModalOpen(false);
     // Do not nag during this tab session, but ask again on the next visit.
-    sessionStorage.setItem('skywalker_key_prompt_dismissed', 'true');
+    try {
+      sessionStorage.setItem('skywalker_key_prompt_dismissed', 'true');
+    } catch {
+      // Storage may be blocked; closing the dialog is what matters.
+    }
   };
 
   const handleSetLanguage = (lang: 'en' | 'az') => {
